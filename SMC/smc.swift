@@ -200,72 +200,74 @@ public class SMC {
         return IOServiceClose(conn)
     }
     
+    /// Decode an SMC value's payload bytes to a `Double` based on its data type.
+    ///
+    /// The signed fixed-point types decoded below (`sp1e`, `sp3c`, `sp4b`, `sp5a`,
+    /// `sp69`, `sp78`, `sp87`, `sp96`, `spa5`, `spb4`) store a two's-complement
+    /// 16-bit value, so their two payload bytes are reinterpreted as a signed
+    /// `Int16` before dividing by the type's scale factor. Combining the bytes as
+    /// an unsigned value — the previous implementation — made negative readings
+    /// (e.g. a sub-zero ambient temperature reported as `sp78`) decode as large
+    /// positives (~251 instead of -5). Positive readings are unchanged.
+    internal static func decode(_ val: SMCVal_t) -> Double? {
+        switch val.dataType {
+        case SMCDataType.UI8.rawValue:
+            return Double(val.bytes[0])
+        case SMCDataType.UI16.rawValue:
+            return Double(UInt16(bytes: (val.bytes[0], val.bytes[1])))
+        case SMCDataType.UI32.rawValue:
+            return Double(UInt32(bytes: (val.bytes[0], val.bytes[1], val.bytes[2], val.bytes[3])))
+        case SMCDataType.SP1E.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 16384
+        case SMCDataType.SP3C.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 4096
+        case SMCDataType.SP4B.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 2048
+        case SMCDataType.SP5A.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 1024
+        case SMCDataType.SP69.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 512
+        case SMCDataType.SP78.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 256
+        case SMCDataType.SP87.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 128
+        case SMCDataType.SP96.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 64
+        case SMCDataType.SPA5.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 32
+        case SMCDataType.SPB4.rawValue:
+            return Double(Int16(bitPattern: UInt16(bytes: (val.bytes[0], val.bytes[1])))) / 16
+        case SMCDataType.SPF0.rawValue:
+            return Double(Int(val.bytes[0]) * 256 + Int(val.bytes[1]))
+        case SMCDataType.FLT.rawValue:
+            let value: Float? = Float(val.bytes)
+            if value != nil {
+                return Double(value!)
+            }
+            return nil
+        case SMCDataType.FPE2.rawValue:
+            return Double(Int(fromFPE2: (val.bytes[0], val.bytes[1])))
+        default:
+            return nil
+        }
+    }
+
     public func getValue(_ key: String) -> Double? {
         var result: kern_return_t = 0
         var val: SMCVal_t = SMCVal_t(key)
-        
+
         result = read(&val)
         if result != kIOReturnSuccess {
             print("Error read(\(key)): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return nil
         }
-        
+
         if val.dataSize > 0 {
             if val.bytes.first(where: { $0 != 0 }) == nil && val.key != "FS! " && val.key != "F0Md" && val.key != "F1Md" && val.key != "F0md" && val.key != "F1md" {
                 return nil
             }
-            
-            switch val.dataType {
-            case SMCDataType.UI8.rawValue:
-                return Double(val.bytes[0])
-            case SMCDataType.UI16.rawValue:
-                return Double(UInt16(bytes: (val.bytes[0], val.bytes[1])))
-            case SMCDataType.UI32.rawValue:
-                return Double(UInt32(bytes: (val.bytes[0], val.bytes[1], val.bytes[2], val.bytes[3])))
-            case SMCDataType.SP1E.rawValue:
-                let result: Double = Double(UInt16(val.bytes[0]) * 256 + UInt16(val.bytes[1]))
-                return Double(result / 16384)
-            case SMCDataType.SP3C.rawValue:
-                let result: Double = Double(UInt16(val.bytes[0]) * 256 + UInt16(val.bytes[1]))
-                return Double(result / 4096)
-            case SMCDataType.SP4B.rawValue:
-                let result: Double = Double(UInt16(val.bytes[0]) * 256 + UInt16(val.bytes[1]))
-                return Double(result / 2048)
-            case SMCDataType.SP5A.rawValue:
-                let result: Double = Double(UInt16(val.bytes[0]) * 256 + UInt16(val.bytes[1]))
-                return Double(result / 1024)
-            case SMCDataType.SP69.rawValue:
-                let result: Double = Double(UInt16(val.bytes[0]) * 256 + UInt16(val.bytes[1]))
-                return Double(result / 512)
-            case SMCDataType.SP78.rawValue:
-                let intValue: Double = Double(Int(val.bytes[0]) * 256 + Int(val.bytes[1]))
-                return Double(intValue / 256)
-            case SMCDataType.SP87.rawValue:
-                let intValue: Double = Double(Int(val.bytes[0]) * 256 + Int(val.bytes[1]))
-                return Double(intValue / 128)
-            case SMCDataType.SP96.rawValue:
-                let intValue: Double = Double(Int(val.bytes[0]) * 256 + Int(val.bytes[1]))
-                return Double(intValue / 64)
-            case SMCDataType.SPA5.rawValue:
-                let result: Double = Double(UInt16(val.bytes[0]) * 256 + UInt16(val.bytes[1]))
-                return Double(result / 32)
-            case SMCDataType.SPB4.rawValue:
-                let intValue: Double = Double(Int(val.bytes[0]) * 256 + Int(val.bytes[1]))
-                return Double(intValue / 16)
-            case SMCDataType.SPF0.rawValue:
-                let intValue: Double = Double(Int(val.bytes[0]) * 256 + Int(val.bytes[1]))
-                return intValue
-            case SMCDataType.FLT.rawValue:
-                let value: Float? = Float(val.bytes)
-                if value != nil {
-                    return Double(value!)
-                }
-                return nil
-            case SMCDataType.FPE2.rawValue:
-                return Double(Int(fromFPE2: (val.bytes[0], val.bytes[1])))
-            default:
-                return nil
-            }
+
+            return SMC.decode(val)
         }
         
         return nil
