@@ -258,9 +258,6 @@ public class ProcessReader: Reader<[TopProcess]> {
             usage *= 1024 // apply gigabyte multiplier
         } else if usageString.last == "K" {
             usage /= 1024 // apply kilobyte divider
-        } else if usageString.last == "M" && usageString.count == 5 {
-            usage /= 1024
-            usage *= 1000
         }
         
         var name: String = command

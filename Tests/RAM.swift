@@ -27,7 +27,7 @@ class RAM: XCTestCase {
         process = ProcessReader.parseProcess("7752  phpstorm         1819M")
         XCTAssertEqual(process.pid, 7752)
         XCTAssertEqual(process.name, "phpstorm")
-        XCTAssertEqual(process.usage, 1819.0 / 1024 * 1000 * Double(1000 * 1000))
+        XCTAssertEqual(process.usage, 1819 * Double(1000 * 1000))
         
         process = ProcessReader.parseProcess("359   NotificationCent 62M")
         XCTAssertEqual(process.pid, 359)
@@ -71,11 +71,29 @@ class RAM: XCTestCase {
         var process = ProcessReader.parseProcess("0  com.apple.Virtua 8463M")
         XCTAssertEqual(process.pid, 0)
         XCTAssertEqual(process.name, "com.apple.Virtua")
-        XCTAssertEqual(process.usage, 8463.0 / 1024 * 1000 * 1000 * 1000)
+        XCTAssertEqual(process.usage, 8463 * Double(1000 * 1000))
         
         process = ProcessReader.parseProcess("0  Safari           658M")
         XCTAssertEqual(process.pid, 0)
         XCTAssertEqual(process.name, "Safari")
         XCTAssertEqual(process.usage, 658 * Double(1000 * 1000))
+    }
+
+    func testMonotonicityAt1000M() throws {
+        // Regression: per-process RAM must stay monotonic across the 1000M boundary.
+        // The old 4-digit M special case (usageString.count == 5) scaled 1000M down by
+        // 1024/1000, so a 1000M process reported ~976.56 MB — LESS than the 999 MB of a
+        // 999M process, even though its real usage is higher.
+        let at999 = ProcessReader.parseProcess("1234 A 999M")
+        let at1000 = ProcessReader.parseProcess("1235 B 1000M")
+        let at1001 = ProcessReader.parseProcess("1236 C 1001M")
+
+        XCTAssertEqual(at999.usage, 999 * Double(1000 * 1000))
+        XCTAssertEqual(at1000.usage, 1000 * Double(1000 * 1000))
+        XCTAssertEqual(at1001.usage, 1001 * Double(1000 * 1000))
+
+        // The boundary that used to be non-monotonic: usage must rise, not drop.
+        XCTAssertLessThan(at999.usage, at1000.usage)
+        XCTAssertLessThan(at1000.usage, at1001.usage)
     }
 }
